@@ -6,14 +6,13 @@ import pandas as pd
 import streamlit as st
 
 from alphawatch.charts import (
-    build_candlestick_chart,
+    build_deep_dive_chart,
     build_feature_snapshot_chart,
     build_market_relative_chart,
     build_reason_distribution_chart,
     build_score_component_chart,
-    build_score_history_chart,
     build_top_driver_chart,
-    build_volume_chart,
+    get_plotly_chart_config,
 )
 from alphawatch.config import (
     APP_DESCRIPTION,
@@ -54,6 +53,9 @@ def score_selected_history(data: pd.DataFrame) -> pd.DataFrame:
 def save_rankings(ranked_results: pd.DataFrame) -> None:
     if not ranked_results.empty:
         ranked_results.to_csv(RESULTS_PATH, index=False)
+
+
+PLOTLY_CONFIG = get_plotly_chart_config()
 
 
 def format_percent(value: float) -> str:
@@ -293,14 +295,20 @@ def render_analyst_report(
     chart_columns[0].plotly_chart(
         build_score_component_chart(latest_row, selected_ticker),
         use_container_width=True,
+        config=PLOTLY_CONFIG,
+        key=f"{selected_ticker}-score-components",
     )
     chart_columns[1].plotly_chart(
         build_top_driver_chart(latest_row, selected_ticker),
         use_container_width=True,
+        config=PLOTLY_CONFIG,
+        key=f"{selected_ticker}-top-drivers",
     )
     st.plotly_chart(
         build_market_relative_chart(scored_selected, selected_ticker),
         use_container_width=True,
+        config=PLOTLY_CONFIG,
+        key=f"{selected_ticker}-market-relative",
     )
 
     recent_history = scored_selected.dropna(subset=["anomaly_score"]).tail(20)
@@ -431,20 +439,24 @@ def main() -> None:
             mime="text/csv",
             width="content",
         )
-        st.plotly_chart(build_reason_distribution_chart(ranked_results), use_container_width=True)
+        st.plotly_chart(
+            build_reason_distribution_chart(ranked_results),
+            use_container_width=True,
+            config=PLOTLY_CONFIG,
+            key="reason-distribution",
+        )
 
     with deep_dive_tab:
         st.subheader(f"{selected_ticker} Latest Metrics")
         render_metric_cards(latest_selected)
-        st.plotly_chart(build_candlestick_chart(scored_selected, selected_ticker), use_container_width=True)
-        chart_columns = st.columns(2)
-        chart_columns[0].plotly_chart(
-            build_volume_chart(scored_selected, selected_ticker),
-            use_container_width=True,
+        st.caption(
+            "Use mouse-wheel or trackpad zoom directly on the chart, drag to zoom, switch to pan from the toolbar, and double-click to reset."
         )
-        chart_columns[1].plotly_chart(
-            build_score_history_chart(scored_selected, selected_ticker),
+        st.plotly_chart(
+            build_deep_dive_chart(scored_selected, selected_ticker),
             use_container_width=True,
+            config=PLOTLY_CONFIG,
+            key=f"{selected_ticker}-deep-dive",
         )
 
     with analyst_tab:
@@ -455,6 +467,8 @@ def main() -> None:
         chart_columns[0].plotly_chart(
             build_feature_snapshot_chart(latest_selected, selected_ticker),
             use_container_width=True,
+            config=PLOTLY_CONFIG,
+            key=f"{selected_ticker}-feature-snapshot",
         )
         with chart_columns[1]:
             st.subheader("Latest Feature Values")

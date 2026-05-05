@@ -5,8 +5,58 @@ import re
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from alphawatch.config import BENCHMARK_NAME, FEATURE_COLUMNS, FEATURE_LABELS, PERCENT_FEATURES
+
+PLOTLY_CHART_CONFIG = {
+    "displayModeBar": True,
+    "displaylogo": False,
+    "scrollZoom": True,
+    "doubleClick": "reset",
+    "modeBarButtonsToRemove": ["select2d", "lasso2d", "autoScale2d", "toggleSpikelines"],
+    "toImageButtonOptions": {
+        "format": "png",
+        "filename": "alphawatch-chart",
+        "scale": 2,
+    },
+}
+
+RANGE_SELECTOR = dict(
+    buttons=[
+        dict(count=1, label="1M", step="month", stepmode="backward"),
+        dict(count=3, label="3M", step="month", stepmode="backward"),
+        dict(count=6, label="6M", step="month", stepmode="backward"),
+        dict(count=1, label="YTD", step="year", stepmode="todate"),
+        dict(count=1, label="1Y", step="year", stepmode="backward"),
+        dict(label="All", step="all"),
+    ]
+)
+
+
+def get_plotly_chart_config() -> dict:
+    return dict(PLOTLY_CHART_CONFIG)
+
+
+def add_time_series_axis_styles(figure: go.Figure, *, show_range_slider: bool = False) -> None:
+    figure.update_xaxes(
+        showline=True,
+        linecolor="#475569",
+        gridcolor="rgba(148, 163, 184, 0.12)",
+        showspikes=True,
+        spikecolor="#94a3b8",
+        spikethickness=1,
+        spikesnap="cursor",
+        spikemode="across",
+        rangebreaks=[dict(bounds=["sat", "mon"])],
+        rangeslider_visible=show_range_slider,
+    )
+    figure.update_yaxes(
+        showline=True,
+        linecolor="#475569",
+        gridcolor="rgba(148, 163, 184, 0.12)",
+        zeroline=False,
+    )
 
 
 def build_candlestick_chart(scored_data: pd.DataFrame, ticker: str) -> go.Figure:
@@ -76,10 +126,13 @@ def build_candlestick_chart(scored_data: pd.DataFrame, ticker: str) -> go.Figure
         yaxis_title="Price",
         height=520,
         margin=dict(l=20, r=20, t=55, b=20),
+        hovermode="x unified",
+        dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         template="plotly_white",
+        uirevision=f"{ticker}-candles",
     )
-    figure.update_xaxes(rangeslider_visible=False)
+    add_time_series_axis_styles(figure)
     return figure
 
 
@@ -101,9 +154,13 @@ def build_volume_chart(scored_data: pd.DataFrame, ticker: str) -> go.Figure:
         yaxis_title="Volume",
         height=310,
         margin=dict(l=20, r=20, t=55, b=20),
+        hovermode="x unified",
+        dragmode="zoom",
         template="plotly_white",
         showlegend=False,
+        uirevision=f"{ticker}-volume",
     )
+    add_time_series_axis_styles(figure)
     return figure
 
 
@@ -146,8 +203,174 @@ def build_score_history_chart(scored_data: pd.DataFrame, ticker: str) -> go.Figu
         height=300,
         margin=dict(l=20, r=20, t=55, b=20),
         template="plotly_white",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified",
+        dragmode="zoom",
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+        uirevision=f"{ticker}-score-history",
     )
+    add_time_series_axis_styles(figure)
+    return figure
+
+
+def build_deep_dive_chart(scored_data: pd.DataFrame, ticker: str) -> go.Figure:
+    anomalies = scored_data[scored_data["is_anomaly"] == True]
+    volume_colors = np.where(scored_data["volume_zscore"].fillna(0) >= 2.0, "#dc2626", "#94a3b8")
+
+    figure = make_subplots(
+        rows=3,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.06,
+        row_heights=[0.56, 0.2, 0.24],
+        subplot_titles=(
+            f"{ticker} price action",
+            "Trading volume",
+            "Anomaly score and components",
+        ),
+    )
+
+    figure.add_trace(
+        go.Candlestick(
+            x=scored_data.index,
+            open=scored_data["Open"],
+            high=scored_data["High"],
+            low=scored_data["Low"],
+            close=scored_data["Close"],
+            name="OHLC",
+            legendgroup="price",
+            increasing_line_color="#16a34a",
+            decreasing_line_color="#dc2626",
+        ),
+        row=1,
+        col=1,
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=scored_data.index,
+            y=scored_data["moving_average_20"],
+            mode="lines",
+            name="20DMA",
+            legendgroup="price",
+            line=dict(color="#2563eb", width=1.5),
+        ),
+        row=1,
+        col=1,
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=scored_data.index,
+            y=scored_data["moving_average_50"],
+            mode="lines",
+            name="50DMA",
+            legendgroup="price",
+            line=dict(color="#7c3aed", width=1.5),
+        ),
+        row=1,
+        col=1,
+    )
+
+    if not anomalies.empty:
+        figure.add_trace(
+            go.Scatter(
+                x=anomalies.index,
+                y=anomalies["Close"],
+                mode="markers",
+                name="Anomaly",
+                legendgroup="price",
+                marker=dict(color="#f97316", size=9, symbol="diamond", line=dict(width=1)),
+                customdata=np.stack(
+                    [
+                        anomalies["anomaly_score"].fillna(0),
+                        anomalies["reason"],
+                        anomalies["risk_level"],
+                    ],
+                    axis=-1,
+                ),
+                hovertemplate=(
+                    "Date=%{x}<br>"
+                    "Close=%{y:.2f}<br>"
+                    "Score=%{customdata[0]:.1f}<br>"
+                    "Risk=%{customdata[2]}<br>"
+                    "%{customdata[1]}<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=1,
+        )
+
+    figure.add_trace(
+        go.Bar(
+            x=scored_data.index,
+            y=scored_data["Volume"],
+            name="Volume",
+            marker_color=volume_colors,
+            hovertemplate="Date=%{x}<br>Volume=%{y:,.0f}<extra></extra>",
+            showlegend=False,
+        ),
+        row=2,
+        col=1,
+    )
+
+    figure.add_trace(
+        go.Scatter(
+            x=scored_data.index,
+            y=scored_data["anomaly_score"],
+            mode="lines",
+            name="Anomaly score",
+            legendgroup="scores",
+            line=dict(color="#0f766e", width=2.2),
+            hovertemplate="Date=%{x}<br>Score=%{y:.1f}<extra></extra>",
+        ),
+        row=3,
+        col=1,
+    )
+    for column, label, color in [
+        ("isolation_score", "Isolation", "#64748b"),
+        ("robust_feature_score", "Robust features", "#7c3aed"),
+        ("relative_market_score", "Market-relative", "#ea580c"),
+    ]:
+        if column in scored_data:
+            figure.add_trace(
+                go.Scatter(
+                    x=scored_data.index,
+                    y=scored_data[column],
+                    mode="lines",
+                    name=label,
+                    legendgroup="scores",
+                    line=dict(color=color, width=1, dash="dot"),
+                    opacity=0.7,
+                    hovertemplate=f"Date=%{{x}}<br>{label}=%{{y:.1f}}<extra></extra>",
+                ),
+                row=3,
+                col=1,
+            )
+
+    figure.add_hrect(
+        y0=80,
+        y1=100,
+        line_width=0,
+        fillcolor="#fee2e2",
+        opacity=0.35,
+        row=3,
+        col=1,
+    )
+    figure.add_hline(y=80, line_dash="dot", line_color="#dc2626", row=3, col=1)
+
+    figure.update_layout(
+        height=900,
+        margin=dict(l=20, r=20, t=45, b=20),
+        template="plotly_white",
+        hovermode="x unified",
+        dragmode="zoom",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        uirevision=f"{ticker}-deep-dive",
+    )
+    figure.update_yaxes(title_text="Price", row=1, col=1)
+    figure.update_yaxes(title_text="Volume", row=2, col=1)
+    figure.update_yaxes(title_text="Score", range=[0, 100], row=3, col=1)
+    figure.update_xaxes(title_text="Date", row=3, col=1)
+    add_time_series_axis_styles(figure, show_range_slider=True)
+    figure.update_xaxes(rangeselector=RANGE_SELECTOR, row=3, col=1)
     return figure
 
 
@@ -185,6 +408,8 @@ def build_feature_snapshot_chart(latest_row: pd.Series, ticker: str) -> go.Figur
         margin=dict(l=20, r=20, t=55, b=20),
         template="plotly_white",
         showlegend=False,
+        dragmode="pan",
+        uirevision=f"{ticker}-feature-snapshot",
     )
     return figure
 
@@ -216,6 +441,8 @@ def build_score_component_chart(latest_row: pd.Series, ticker: str) -> go.Figure
         margin=dict(l=20, r=20, t=55, b=20),
         template="plotly_white",
         showlegend=False,
+        dragmode="pan",
+        uirevision=f"{ticker}-score-components",
     )
     return figure
 
@@ -254,6 +481,8 @@ def build_top_driver_chart(latest_row: pd.Series, ticker: str) -> go.Figure:
         margin=dict(l=20, r=20, t=55, b=20),
         template="plotly_white",
         showlegend=False,
+        dragmode="pan",
+        uirevision=f"{ticker}-drivers",
     )
     return figure
 
@@ -306,8 +535,12 @@ def build_market_relative_chart(
         height=360,
         margin=dict(l=20, r=20, t=55, b=20),
         template="plotly_white",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified",
+        dragmode="zoom",
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+        uirevision=f"{ticker}-market-relative",
     )
+    add_time_series_axis_styles(figure)
     return figure
 
 
@@ -330,5 +563,7 @@ def build_reason_distribution_chart(ranked_results: pd.DataFrame) -> go.Figure:
         margin=dict(l=20, r=20, t=55, b=20),
         template="plotly_white",
         showlegend=False,
+        dragmode="pan",
+        uirevision="reason-distribution",
     )
     return figure
