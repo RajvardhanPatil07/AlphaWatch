@@ -1,30 +1,58 @@
 # AlphaWatch: Indian Stock Market Anomaly Detector
 
-AlphaWatch is a Streamlit dashboard that downloads NSE stock data, engineers market-behavior features, detects abnormal activity with machine learning, and ranks stocks by anomaly score.
+AlphaWatch is a machine-learning dashboard for researching unusual behavior in Indian NSE stocks. It downloads recent OHLCV market data, engineers leakage-safe quantitative features, compares stocks against the NIFTY 50 benchmark, scores anomalies with an ensemble model, and presents the results in a clean Streamlit analyst dashboard.
 
-Strong v2 improves the signal quality by combining an Isolation Forest model, robust statistical feature deviations, and NIFTY 50-relative context. It also adds an analyst report for each stock so the result is easier to interpret.
+## Live Demo
 
-## What the Project Does
+Open the deployed app here:
 
-- Downloads daily OHLCV data for selected NSE stocks using `yfinance`.
-- Downloads NIFTY 50 benchmark data through `^NSEI` when available.
-- Lets users edit the NSE watchlist directly in the sidebar.
-- Calculates price, volume, volatility, momentum, RSI, moving-average, range, drawdown, and benchmark-relative features.
-- Scores anomalies with an ensemble of ML and robust statistical signals.
-- Ranks stocks by final anomaly score and classifies risk, confidence, and signal direction.
-- Explains each signal with primary drivers and top feature contributors.
-- Saves the full latest ranked output to `anomaly_results.csv`.
-- Displays Streamlit tabs for market overview, ticker deep dive, analyst report, feature explorer, and data quality.
+[https://alphawatch1.streamlit.app/](https://alphawatch1.streamlit.app/)
 
-## Why Anomaly Detection Instead of Direct Price Prediction
+## What AlphaWatch Does
 
-Direct price prediction tries to forecast the exact future price or return of a stock, which is noisy, unstable, and highly sensitive to news, liquidity, macro events, and market regime changes.
+- Downloads NSE daily stock data with `yfinance`.
+- Uses `^NSEI` as a NIFTY 50 benchmark when benchmark data is available.
+- Lets users edit the stock watchlist directly in the sidebar.
+- Normalizes bare NSE symbols such as `RELIANCE` to `RELIANCE.NS`.
+- Builds price, volume, volatility, momentum, RSI, moving-average, range, drawdown, and benchmark-relative features.
+- Detects abnormal market behavior with an ensemble anomaly score.
+- Ranks stocks by latest anomaly score and exports the full ranking to `anomaly_results.csv`.
+- Explains signals with risk level, confidence level, signal direction, primary driver, driver details, and top feature drivers.
+- Includes charts for market overview, ticker deep dive, analyst report, feature explorer, and data quality.
 
-Anomaly detection asks a more realistic research question: "Is today's behavior unusual compared with this stock's own recent history and the broader market?" That makes the model useful for surfacing stocks that deserve attention without pretending to know tomorrow's price.
+## Why Anomaly Detection
+
+Direct stock-price prediction is usually brittle because prices react to noisy and fast-changing information: news, liquidity, sentiment, macro events, index movement, and market regime shifts.
+
+AlphaWatch uses anomaly detection instead. The question is not "what will the price be tomorrow?" The question is:
+
+```text
+Is this stock behaving unusually compared with its own history and the broader market?
+```
+
+That framing makes the tool useful for research and monitoring. It surfaces stocks that may deserve a closer look without pretending to produce buy or sell recommendations.
+
+## Signal Engine
+
+AlphaWatch combines three scoring components:
+
+- `isolation_score`: an Isolation Forest anomaly score trained on historical feature behavior.
+- `robust_feature_score`: a median/MAD statistical score based on large feature deviations.
+- `relative_market_score`: a benchmark-relative score based on excess return and relative strength versus NIFTY 50.
+
+The final anomaly score is:
+
+```text
+final_anomaly_score = 0.60 * isolation_score
+                    + 0.25 * robust_feature_score
+                    + 0.15 * relative_market_score
+```
+
+The app keeps the exported `anomaly_score` column as the final score for compatibility.
 
 ## Features Used
 
-AlphaWatch calculates leakage-safe features from historical daily data:
+Core stock features:
 
 - `daily_return`
 - `rolling_7d_return`
@@ -34,6 +62,9 @@ AlphaWatch calculates leakage-safe features from historical daily data:
 - `rsi_14`
 - `distance_from_20dma`
 - `distance_from_50dma`
+
+Strong v2 feature set:
+
 - `return_zscore_20`
 - `volatility_zscore_60`
 - `volume_ratio_20`
@@ -42,66 +73,40 @@ AlphaWatch calculates leakage-safe features from historical daily data:
 - `close_position_in_range`
 - `drawdown_from_60d_high`
 - `rsi_change_3d`
+
+Benchmark-relative features:
+
 - `benchmark_return`
 - `excess_return`
 - `relative_7d_return`
 - `excess_return_zscore_20`
 
-Rolling baselines use current and prior historical data only. Z-score baselines compare the current value with prior trailing windows to avoid future leakage.
+Feature calculations are trailing-only. Rolling statistics, moving averages, RSI, volatility, and z-score baselines use current and past data only, avoiding future data leakage.
 
-## ML And Scoring Method
+## Dashboard
 
-The main model is `IsolationForest` from scikit-learn. Strong v2 keeps Isolation Forest as the core anomaly detector but adds two more scoring layers:
+AlphaWatch includes five main views:
 
-- `isolation_score`: percentile score from the Isolation Forest anomaly output.
-- `robust_feature_score`: median/MAD-based score from the strongest feature deviations.
-- `relative_market_score`: score from NIFTY 50-relative behavior such as excess return and relative 7-day return.
+- `Market Overview`: portfolio summary, ranked anomaly table, reason distribution, and CSV download.
+- `Ticker Deep Dive`: latest metrics, candlestick chart, 20DMA, 50DMA, anomaly markers, volume, and score history.
+- `Analyst Report`: selected-stock diagnosis, score breakdown, top drivers, confidence, risk level, benchmark comparison, and research checklist.
+- `Feature Explorer`: latest feature snapshot and raw feature values.
+- `Data Quality`: successful tickers, failed tickers, row counts, benchmark status, and provider error messages.
 
-The final score is:
+## Controls
 
-```text
-final_anomaly_score = 0.60 * isolation_score
-                    + 0.25 * robust_feature_score
-                    + 0.15 * relative_market_score
-```
+- Editable watchlist with comma or newline support.
+- Lookback selector: `6mo`, `1y`, or `2y`.
+- Top-N filter.
+- Minimum anomaly score filter.
+- Anomaly-only toggle.
+- Reason filter.
+- Confidence filter.
+- Signal-direction filter.
+- Ticker selector for detailed charts.
+- Refresh button to clear cached market data.
 
-The app keeps `anomaly_score` as the final score for compatibility and also exports each component score.
-
-## Confidence And Explanation
-
-AlphaWatch assigns:
-
-- `risk_level`: `Extreme`, `High`, `Moderate`, or `Normal`.
-- `confidence_level`: `High`, `Medium`, or `Low`, based on agreement across score components.
-- `signal_direction`: `Bullish`, `Bearish`, or `Mixed`.
-- `primary_driver`: the main category behind the anomaly.
-- `top_feature_drivers`: the strongest robust-z feature deviations.
-- `driver_details`: a short score-component explanation.
-
-Reasons can combine multiple drivers, such as `Momentum breakout + Market-relative strength`.
-
-## Project Structure
-
-```text
-app.py
-alphawatch/
-  config.py
-  data.py
-  features.py
-  model.py
-  charts.py
-requirements.txt
-README.md
-anomaly_results.csv
-```
-
-- `app.py` contains Streamlit layout, caching, controls, tabs, and CSV export.
-- `alphawatch/data.py` handles ticker normalization, watchlist parsing, yfinance downloads, benchmark downloads, and provider failures.
-- `alphawatch/features.py` calculates leakage-safe stock and benchmark-relative features.
-- `alphawatch/model.py` scores anomalies, builds ensemble scores, explains drivers, and assigns risk/confidence/direction.
-- `alphawatch/charts.py` builds Plotly charts.
-
-## Default NSE Tickers
+## Default NSE Watchlist
 
 ```text
 RELIANCE.NS
@@ -121,61 +126,74 @@ COALINDIA.NS
 ONGC.NS
 ```
 
-## Dashboard Controls
+## Project Structure
 
-- Editable NSE watchlist with comma or newline support.
-- Bare symbols such as `RELIANCE` are automatically converted to `RELIANCE.NS`.
-- Lookback selector: `6mo`, `1y`, or `2y`.
-- Top-N filter.
-- Minimum anomaly score filter.
-- Model-flagged anomaly toggle.
-- Reason, confidence, and signal-direction filters.
-- Ticker selector for deep-dive charts.
-- Refresh button to clear cached market data.
+```text
+app.py
+alphawatch/
+  __init__.py
+  charts.py
+  config.py
+  data.py
+  features.py
+  model.py
+requirements.txt
+README.md
+anomaly_results.csv
+```
 
-## Dashboard Tabs
+## Architecture
 
-- `Market Overview`: summary cards, ranked anomaly table, CSV download, and reason distribution.
-- `Ticker Deep Dive`: latest metrics, candlestick chart with 20DMA/50DMA, anomaly markers, volume chart, and score history.
-- `Analyst Report`: diagnosis, score breakdown, top feature drivers, market-relative chart, recent context, and research checklist.
-- `Feature Explorer`: latest feature snapshot chart and feature-value table.
-- `Data Quality`: requested tickers, downloaded/scored status, row counts, benchmark status, provider failures, and CSV status.
+- `app.py`: Streamlit layout, sidebar controls, caching, tabs, and CSV export.
+- `alphawatch/config.py`: default ticker list, constants, thresholds, and scoring configuration.
+- `alphawatch/data.py`: watchlist parsing, NSE ticker normalization, yfinance downloads, benchmark download, and failure handling.
+- `alphawatch/features.py`: leakage-safe stock and benchmark-relative feature engineering.
+- `alphawatch/model.py`: Isolation Forest scoring, robust statistical scoring, ensemble score, risk/confidence labels, and signal explanations.
+- `alphawatch/charts.py`: Plotly chart builders for price, volume, anomaly score, feature drivers, and benchmark comparison.
 
-## How to Install
+## Tech Stack
+
+- Python
+- Streamlit
+- yfinance
+- pandas
+- numpy
+- scikit-learn
+- plotly
+- matplotlib
+
+## Run Locally
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## How to Run
+Start the app:
 
 ```bash
 streamlit run app.py
 ```
 
-When the app runs, it automatically writes the latest full ranked output to:
+When the app runs, it automatically writes the latest ranked output to:
 
 ```text
 anomaly_results.csv
 ```
 
-## Streamlit Community Cloud Deployment
-
-AlphaWatch is designed to run directly on Streamlit Community Cloud's free plan.
-
-1. Push this project to GitHub.
-2. Open Streamlit Community Cloud and choose **New app**.
-3. Select the GitHub repository and the `main` branch.
-4. Set the app file to `app.py`.
-5. Deploy.
-
-No paid market-data service or API key is required. The app downloads Yahoo Finance data with `yfinance` when it runs.
-
 ## Example Use Case
 
-A market analyst can open AlphaWatch after the market close, paste a custom NSE watchlist, and quickly see which monitored stocks showed unusual behavior. A high anomaly score might point to a volume spike, large gap, abnormal return, momentum breakout, market-relative strength, or price movement far away from recent moving averages.
+A market analyst can open AlphaWatch after market close, paste a custom NSE watchlist, and quickly identify which stocks showed unusual price, volume, volatility, momentum, or benchmark-relative behavior.
 
-The analyst can then inspect the candlestick chart, score breakdown, top drivers, confidence level, benchmark comparison, and recent score history before deciding whether the stock deserves deeper research.
+Instead of reading every chart manually, the analyst can start with the ranked anomaly table, inspect high-scoring tickers in the deep-dive chart, review the score breakdown in the analyst report, and use the data-quality tab to confirm which tickers were successfully downloaded.
+
+## Important Notes
+
+- AlphaWatch depends on Yahoo Finance data through `yfinance`, so symbol availability can vary.
+- Failed symbols are reported explicitly in the Data Quality tab.
+- Some NSE tickers can be renamed, unavailable, or delayed depending on Yahoo Finance coverage.
+- The model is designed for research triage, not automated trading.
 
 ## Disclaimer
 
