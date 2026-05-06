@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -70,6 +70,112 @@ def format_number(value: float, decimals: int = 2) -> str:
     return f"{value:,.{decimals}f}"
 
 
+def inject_metric_card_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        .aw-metric-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 1rem;
+            margin-block: 0.5rem 1.25rem;
+        }
+        .aw-metric-card {
+            min-width: 0;
+        }
+        .aw-metric-label {
+            color: rgba(250, 250, 250, 0.78);
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.65rem;
+        }
+        .aw-metric-value {
+            color: rgba(250, 250, 250, 0.98);
+            font-size: clamp(2rem, 2vw, 3rem);
+            font-weight: 700;
+            line-height: 1.05;
+            letter-spacing: 0;
+            white-space: nowrap;
+            overflow: visible;
+        }
+        .aw-metric-value--close {
+            font-size: clamp(1.85rem, 1.8vw, 2.7rem);
+        }
+        .aw-metric-delta {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            margin-top: 0.9rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+        .aw-metric-delta--up {
+            color: #86efac;
+            background: rgba(34, 197, 94, 0.16);
+        }
+        .aw-metric-delta--down {
+            color: #fca5a5;
+            background: rgba(239, 68, 68, 0.16);
+        }
+        .aw-metric-delta--flat {
+            color: #cbd5e1;
+            background: rgba(148, 163, 184, 0.16);
+        }
+        @media (max-width: 1400px) {
+            .aw-metric-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 900px) {
+            .aw-metric-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 640px) {
+            .aw-metric-grid {
+                grid-template-columns: 1fr;
+            }
+            .aw-metric-value,
+            .aw-metric-value--close {
+                white-space: normal;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_metric_card(label: str, value: str, *, delta: Optional[str] = None, close_value: bool = False) -> str:
+    value_class = "aw-metric-value aw-metric-value--close" if close_value else "aw-metric-value"
+
+    delta_html = ""
+    if delta:
+        delta_class = "aw-metric-delta--flat"
+        delta_symbol = ""
+        if delta.startswith("-"):
+            delta_class = "aw-metric-delta--down"
+            delta_symbol = "↓"
+        elif delta != "0.00%":
+            delta_class = "aw-metric-delta--up"
+            delta_symbol = "↑"
+
+        delta_html = (
+            f'<div class="aw-metric-delta {delta_class}">{delta_symbol} {delta}</div>'
+        )
+
+    return (
+        '<div class="aw-metric-card">'
+        f'<div class="aw-metric-label">{label}</div>'
+        f'<div class="{value_class}">{value}</div>'
+        f"{delta_html}"
+        "</div>"
+    )
+
+
 def render_summary_cards(
     requested_count: int,
     ranked_results: pd.DataFrame,
@@ -111,17 +217,26 @@ def filter_rankings(
 
 
 def render_metric_cards(latest_row: pd.Series) -> None:
-    columns = st.columns(6)
-    columns[0].metric("Close", f"INR {format_number(latest_row['Close'])}")
-    columns[1].metric(
-        "Daily return",
-        format_percent(latest_row["daily_return"]),
-        delta=format_percent(latest_row["daily_return"]),
+    cards = [
+        render_metric_card(
+            "Close",
+            f"INR {format_number(latest_row['Close'])}",
+            close_value=True,
+        ),
+        render_metric_card(
+            "Daily return",
+            format_percent(latest_row["daily_return"]),
+            delta=format_percent(latest_row["daily_return"]),
+        ),
+        render_metric_card("Excess return", format_percent(latest_row.get("excess_return"))),
+        render_metric_card("Anomaly score", format_number(latest_row["anomaly_score"], 1)),
+        render_metric_card("Confidence", str(latest_row.get("confidence_level", "Low"))),
+        render_metric_card("Risk", str(latest_row.get("risk_level", "Normal"))),
+    ]
+    st.markdown(
+        f'<div class="aw-metric-grid">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
     )
-    columns[2].metric("Excess return", format_percent(latest_row.get("excess_return")))
-    columns[3].metric("Anomaly score", format_number(latest_row["anomaly_score"], 1))
-    columns[4].metric("Confidence", latest_row.get("confidence_level", "Low"))
-    columns[5].metric("Risk", latest_row.get("risk_level", "Normal"))
 
 
 def render_ranked_table(ranked_results: pd.DataFrame) -> None:
@@ -335,6 +450,7 @@ def render_analyst_report(
 
 def main() -> None:
     st.set_page_config(page_title="AlphaWatch", layout="wide")
+    inject_metric_card_styles()
 
     st.title(APP_TITLE)
     st.caption(APP_DESCRIPTION)
