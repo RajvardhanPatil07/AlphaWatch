@@ -2,6 +2,8 @@
 
 AlphaWatch is a machine-learning dashboard for researching unusual behavior in Indian NSE stocks. It downloads recent OHLCV market data, engineers leakage-safe quantitative features, compares stocks against the NIFTY 50 benchmark, scores anomalies with an ensemble model, and presents the results in a clean Streamlit analyst dashboard.
 
+It is tuned for quick analyst triage rather than automated trading decisions.
+
 ## Live Demo
 
 Open the deployed app here:
